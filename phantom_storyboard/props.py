@@ -45,6 +45,7 @@ class PhantomSettings(bpy.types.PropertyGroup):
     screen_width: FloatProperty(name="Width", default=12.0, min=0.1)
     screen_height: FloatProperty(name="Height", default=7.0, min=0.1)
     screen_curvature: FloatProperty(name="Curvature", default=2.0, min=0.0)
+    screen_distance: FloatProperty(name="Distance behind", default=2.0, min=0.1)
     screen_segments: IntProperty(name="Segments", default=32, min=2, max=256)
     screen_emission: FloatProperty(name="Emission", default=1.0, min=0.0)
     screen_light_energy: FloatProperty(name="Light power", default=500.0, min=0.0)

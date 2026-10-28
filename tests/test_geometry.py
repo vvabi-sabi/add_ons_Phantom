@@ -26,7 +26,7 @@ class CurvedScreenGeometryTests(unittest.TestCase):
         self.assertEqual(len(faces), 4)
         self.assertEqual(len(uvs), len(vertices))
         self.assertEqual(vertices[4][1], 0.0)
-        self.assertEqual(vertices[0][1], 2.0)
+        self.assertEqual(vertices[0][1], -2.0)
         self.assertEqual(uvs[0], (0.0, 0.0))
         self.assertEqual(uvs[-1], (1.0, 1.0))
 

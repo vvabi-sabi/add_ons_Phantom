@@ -7,7 +7,7 @@ from pathlib import Path
 import bpy
 from bpy.props import BoolProperty, EnumProperty, StringProperty
 from bpy_extras.io_utils import ImportHelper
-from mathutils import Vector
+from mathutils import Quaternion, Vector
 
 from .geometry import curved_screen_geometry, held_frame_groups, unit_cube_geometry
 
@@ -114,6 +114,21 @@ def _top_ancestors(objects):
         if obj.get(KIND) not in {ROOT, CAGE, SCREEN, BAKE}:
             result.add(obj)
     return result
+
+
+def _target_root(context):
+    root = _phantom_root(context.active_object)
+    if root is not None:
+        return root
+    roots = [obj for obj in context.scene.objects if obj.get(KIND) == ROOT]
+    return roots[0] if len(roots) == 1 else None
+
+
+def _parent_to_root(obj, root):
+    basis = obj.matrix_basis.copy()
+    obj.parent = root
+    obj.matrix_parent_inverse = root.matrix_world.inverted()
+    obj.matrix_basis = basis
 
 
 def _clamp_to_box(root, location):
@@ -257,13 +272,33 @@ class PHANTOM_OT_create(bpy.types.Operator):
         _configure_bounds(root, settings.box_size)
 
         for obj in _top_ancestors(selected):
-            basis = obj.matrix_basis.copy()
-            obj.parent = root
-            obj.matrix_parent_inverse = root.matrix_world.inverted()
-            obj.matrix_basis = basis
+            _parent_to_root(obj, root)
 
         _set_active(context, root)
         self.report({"INFO"}, f"Created {root.name}")
+        return {"FINISHED"}
+
+
+class PHANTOM_OT_attach_selected(bpy.types.Operator):
+    bl_idname = "phantom.attach_selected"
+    bl_label = "Attach Selected to Phantom"
+    bl_description = "Attach selected imported model or rig to the active or only Phantom"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        root = _target_root(context)
+        if root is None:
+            self.report({"ERROR"}, "Select the target Phantom last when the scene has several Phantoms")
+            return {"CANCELLED"}
+
+        objects = _top_ancestors(context.selected_objects)
+        if not objects:
+            self.report({"ERROR"}, "Select an imported model or rig")
+            return {"CANCELLED"}
+        for obj in objects:
+            _parent_to_root(obj, root)
+        _set_active(context, root)
+        self.report({"INFO"}, f"Attached {len(objects)} object hierarchy(s) to {root.name}")
         return {"FINISHED"}
 
 
@@ -405,7 +440,25 @@ class PHANTOM_OT_create_screen(bpy.types.Operator):
         collection = _phantom_collection(context.scene)
         screen = _new_mesh_object("Phantom_Backdrop", vertices, faces, collection)
         screen[KIND] = SCREEN
-        screen.location = context.scene.cursor.location
+        target = _target_root(context)
+        target_location = (
+            target.matrix_world.translation.copy()
+            if target is not None
+            else context.scene.cursor.location.copy()
+        )
+        camera = context.scene.camera
+        if camera is not None:
+            direction = target_location - camera.matrix_world.translation
+            if direction.length == 0.0:
+                direction = camera.matrix_world.to_quaternion() @ Vector((0.0, 0.0, -1.0))
+            direction.normalize()
+            screen.location = target_location + direction * settings.screen_distance
+            screen.rotation_mode = "QUATERNION"
+            screen.rotation_quaternion = camera.matrix_world.to_quaternion() @ Quaternion(
+                (1.0, 0.0, 0.0), -math.pi / 2.0
+            )
+        else:
+            screen.location = target_location + Vector((0.0, settings.screen_distance, 0.0))
         uv_layer = screen.data.uv_layers.new(name="UVMap")
         for polygon in screen.data.polygons:
             for loop_index in polygon.loop_indices:
@@ -648,6 +701,7 @@ class PHANTOM_OT_use_bake(bpy.types.Operator):
 
 classes = (
     PHANTOM_OT_create,
+    PHANTOM_OT_attach_selected,
     PHANTOM_OT_update_box,
     PHANTOM_OT_toggle_box,
     PHANTOM_OT_control,

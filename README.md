@@ -4,7 +4,7 @@ A small Blender 4.2+ add-on for staging 3D characters as bounded **Phantoms** an
 
 ## What works in v0.1
 
-- Wrap a selected model/rig hierarchy in a marked Phantom root.
+- Wrap a selected model/rig hierarchy in a marked Phantom root, or attach it to an existing Phantom later.
 - Keep that root inside a visible wire cage with a `Limit Location` constraint.
 - Move it with `W/A/S/D`, `Q/E`, rotate with the arrow keys, and insert timeline keys automatically or with `K`.
 - Create multiple independent Phantoms.
@@ -24,13 +24,14 @@ Enable **Phantom Storyboard**. Its panel appears in **3D Viewport â†’ Sidebar â†
 
 1. Save the `.blend` file. Bake output is written beside it under `phantom_bakes/`.
 2. Select the top-level character rig/model and click **Create Phantom**.
+   - If the Phantom already exists, select the imported model and click **Attach Selected to Phantom**. With several Phantoms, Shift-select the target Phantom last so it is active.
 3. Set **Cage size**, click **Apply Cage Size**, then click **Control Phantom**.
 4. Use `W/A/S/D` for X/Y, `Q/E` for Z, arrows for Z rotation, and `Esc` to leave control mode.
 5. Set the scene camera and frame range.
 6. Pick **On ones** (24 poses at 24 fps) or **On twos** (12 poses at 24 fps), then click **Bake to 2D Projection**.
 7. Use **Use 2D** / **Use 3D** to choose what final renders see.
 
-For a backdrop, set its dimensions, create it, keep it selected, and click **Load Image / Video**. The screen faces local `-Y`; rotate it as needed for your shot.
+For a backdrop, select the target Phantom, set **Distance behind**, and create the screen. With an active camera it is placed behind the Phantom, faces the camera, and curves toward it. Keep the new screen selected and click **Load Image / Video**.
 
 ## Bake behavior
 

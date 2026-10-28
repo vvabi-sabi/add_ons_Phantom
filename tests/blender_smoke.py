@@ -54,10 +54,12 @@ def main():
     assert bpy.ops.phantom.update_box() == {"FINISHED"}
     assert tuple(round(value, 4) for value in cage.dimensions) == (4.0, 5.0, 6.0)
 
-    assert bpy.ops.phantom.create_screen() == {"FINISHED"}
-    screen = one_object(SCREEN)
-    assert screen.data.uv_layers.active is not None
-    assert any(child.type == "LIGHT" for child in screen.children)
+    bpy.ops.mesh.primitive_uv_sphere_add(location=(1.0, 0.0, 0.0))
+    accessory = bpy.context.active_object
+    root.select_set(True)
+    bpy.context.view_layer.objects.active = root
+    assert bpy.ops.phantom.attach_selected() == {"FINISHED"}
+    assert accessory.parent == root
 
     camera_data = bpy.data.cameras.new("SmokeCamera")
     camera = bpy.data.objects.new("SmokeCamera", camera_data)
@@ -65,6 +67,16 @@ def main():
     camera.location = (0.0, -10.0, 0.0)
     camera.rotation_euler.x = 1.5707963267948966
     scene.camera = camera
+
+    active(root)
+    assert bpy.ops.phantom.create_screen() == {"FINISHED"}
+    screen = one_object(SCREEN)
+    assert screen.data.uv_layers.active is not None
+    assert any(child.type == "LIGHT" for child in screen.children)
+    assert (screen.location - camera.location).length > (root.location - camera.location).length
+    screen_depths = [vertex.co.y for vertex in screen.data.vertices]
+    assert min(screen_depths) < 0.0
+    assert round(max(screen_depths), 6) == 0.0
 
     active(root)
     smoke_file = Path("/tmp/phantom_storyboard_smoke.blend")

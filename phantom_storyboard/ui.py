@@ -17,8 +17,9 @@ class PHANTOM_PT_storyboard(bpy.types.Panel):
 
         box = layout.box()
         box.label(text="Phantom", icon="ARMATURE_DATA")
-        box.label(text="Select a rig/model first", icon="INFO")
+        box.label(text="Select a rig/model before Create", icon="INFO")
         box.operator("phantom.create", icon="ADD")
+        box.operator("phantom.attach_selected", icon="OUTLINER_OB_ARMATURE")
         box.prop(settings, "is_box_visible")
         box.prop(settings, "box_size")
         row = box.row(align=True)
@@ -49,6 +50,7 @@ class PHANTOM_PT_storyboard(bpy.types.Panel):
         row.prop(settings, "screen_width")
         row.prop(settings, "screen_height")
         screen.prop(settings, "screen_curvature")
+        screen.prop(settings, "screen_distance")
         screen.prop(settings, "screen_segments")
         screen.prop(settings, "screen_emission")
         screen.prop(settings, "screen_light_energy")

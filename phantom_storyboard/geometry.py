@@ -20,7 +20,7 @@ def curved_screen_geometry(width, height, curvature, segments):
         t = index / segments
         normalized_x = 2.0 * t - 1.0
         x = (t - 0.5) * width
-        y = curvature * (1.0 - sqrt(max(0.0, 1.0 - normalized_x * normalized_x)))
+        y = -curvature * (1.0 - sqrt(max(0.0, 1.0 - normalized_x * normalized_x)))
         vertices.extend(((x, y, -height / 2.0), (x, y, height / 2.0)))
         uvs.extend(((t, 0.0), (t, 1.0)))
 
