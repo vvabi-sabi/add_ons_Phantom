@@ -2,3 +2,4 @@ __pycache__/
 .ruff_cache/
 *.py[cod]
 phantom_storyboard.zip
+phantom_storyboard-*.zip

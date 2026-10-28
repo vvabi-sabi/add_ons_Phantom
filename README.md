@@ -55,4 +55,14 @@ python3 -m unittest discover -s tests -v
 python3 -m compileall -q phantom_storyboard tests
 ```
 
-A real Blender executable is required for registration and render integration testing.
+Run the Blender registration, scene, and real render smoke test with:
+
+```sh
+blender --background --factory-startup --python tests/blender_smoke.py
+```
+
+Build an installable extension archive with:
+
+```sh
+blender --command extension build --source-dir phantom_storyboard --output-dir .
+```
