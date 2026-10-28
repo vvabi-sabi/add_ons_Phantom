@@ -1,0 +1,6 @@
+{
+  "reportMissingImports": false,
+  "reportInvalidTypeForm": false,
+  "reportOptionalMemberAccess": false,
+  "reportOptionalSubscript": false
+}
