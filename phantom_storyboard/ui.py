@@ -33,6 +33,7 @@ class PHANTOM_PT_storyboard(bpy.types.Panel):
 
         controls = layout.box()
         controls.label(text=root.name if root else "No Phantom selected", icon="EMPTY_AXIS")
+        controls.label(text="Arrow Empty = controller; do not delete", icon="INFO")
         controls.prop(settings, "move_step")
         controls.prop(settings, "auto_key")
         controls.operator("phantom.control", icon="PLAY")

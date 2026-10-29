@@ -4,7 +4,7 @@ A small Blender 5.2+ add-on for staging 3D characters as bounded **Phantoms** an
 
 ## What works in v0.1
 
-- Wrap a selected model/rig hierarchy in a marked Phantom root, or attach it to an existing Phantom later.
+- Wrap a selected model/rig hierarchy in a marked Phantom controller Empty, or attach it to an existing Phantom later. The arrow-shaped controller stores movement keys and constraints and must not be deleted.
 - Align a new cage floor with the active camera's lower frame edge at the character depth, and prevent movement below it while leaving the side walls and ceiling open.
 - Move only its attached 3D model with `W/A/S/D`, `Q/E`, rotate with the arrow keys, and insert timeline keys automatically or with `K`. Storyboard Grease Pencil strokes are excluded and detached from older Phantoms automatically.
 - Create multiple independent Phantoms.
@@ -24,7 +24,7 @@ Enable **Phantom Storyboard**. Its panel appears in **3D Viewport â†’ Sidebar â†
 
 1. Save the `.blend` file. Bake output is written beside it under `phantom_bakes/`.
 2. Select the top-level character rig/model and click **Create Phantom**.
-   - If the Phantom already exists, select it and click **Load 3D Model** to import FBX, OBJ, glTF/GLB, STL, or PLY directly from disk.
+   - If the Phantom already exists, select it and click **Load 3D Model** to import FBX, OBJ, glTF/GLB, STL, or PLY directly from disk. Loaded models are centered on the cage floor position in X/Y and placed on the floor in Z.
       - For a model already in the scene, select it and click **Attach Selected to Phantom**. With several Phantoms, Shift-select the target Phantom last so it is active.
 3. New cages align to the active camera's lower frame edge. Adjust **Cage size** and the selected Phantom's **Cage floor position**, then click **Apply Size / Position**. The floor blocks downward movement; the side walls are visual guides and do not block movement.
 4. Use `W/A/S/D` for X/Y, `Q/E` for Z, arrows for Z rotation, and `Esc` to leave control mode.

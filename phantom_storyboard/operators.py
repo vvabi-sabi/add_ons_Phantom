@@ -242,6 +242,40 @@ def _floor_offset(objects, root):
     return floor - _world_floor(objects, floor)
 
 
+def _model_offset(objects, root):
+    points = [
+        obj.matrix_world @ Vector(corner)
+        for hierarchy_root in objects
+        for obj in {hierarchy_root, *hierarchy_root.children_recursive}
+        if obj.type != "EMPTY"
+        for corner in obj.bound_box
+    ]
+    if not points:
+        return Vector((0.0, 0.0, 0.0))
+    minimum = Vector(
+        (
+            min(point.x for point in points),
+            min(point.y for point in points),
+            min(point.z for point in points),
+        )
+    )
+    maximum = Vector(
+        (
+            max(point.x for point in points),
+            max(point.y for point in points),
+            max(point.z for point in points),
+        )
+    )
+    cage_position = Vector(root.phantom_box_position)
+    return Vector(
+        (
+            cage_position.x - (minimum.x + maximum.x) / 2.0,
+            cage_position.y - (minimum.y + maximum.y) / 2.0,
+            cage_position.z - minimum.z,
+        )
+    )
+
+
 def _detach_import_extras(objects):
     excluded = {"CAMERA", "LIGHT", "LIGHT_PROBE", "SPEAKER", "GREASEPENCIL"}
     for obj in objects:
@@ -272,11 +306,11 @@ def _target_root(context):
     return roots[0] if len(roots) == 1 else None
 
 
-def _parent_to_root(obj, root, floor_offset=0.0):
+def _parent_to_root(obj, root, world_offset=None):
     basis = obj.matrix_basis.copy()
     obj.parent = root
     obj.matrix_parent_inverse = root.matrix_world.inverted() @ Matrix.Translation(
-        (0.0, 0.0, floor_offset)
+        world_offset or Vector((0.0, 0.0, 0.0))
     )
     obj.matrix_basis = basis
     obj["phantom_character_root"] = True
@@ -284,6 +318,9 @@ def _parent_to_root(obj, root, floor_offset=0.0):
 
 def _ensure_bounds(root, fallback_size):
     _configure_bounds(root, Vector(root.get("phantom_box_size", fallback_size)))
+    if root.type == "EMPTY":
+        root.empty_display_type = "ARROWS"
+        root.empty_display_size = 0.5
     return _detach_storyboard_objects(root)
 
 
@@ -410,8 +447,8 @@ class PHANTOM_OT_create(bpy.types.Operator):
 
         root = bpy.data.objects.new("Phantom", None)
         collection.objects.link(root)
-        root.empty_display_type = "CUBE"
-        root.empty_display_size = 0.35
+        root.empty_display_type = "ARROWS"
+        root.empty_display_size = 0.5
         root.location = position
         root.show_in_front = True
         root[KIND] = ROOT
@@ -435,9 +472,9 @@ class PHANTOM_OT_create(bpy.types.Operator):
         _configure_bounds(root, settings.box_size)
         context.view_layer.update()
 
-        floor_offset = _floor_offset(model_roots, root)
+        model_offset = _model_offset(model_roots, root)
         for obj in model_roots:
-            _parent_to_root(obj, root, floor_offset)
+            _parent_to_root(obj, root, model_offset)
 
         _set_active(context, root)
         self.report({"INFO"}, f"Created {root.name}")
@@ -461,7 +498,8 @@ class PHANTOM_OT_attach_selected(bpy.types.Operator):
             self.report({"ERROR"}, "Select the top-level model or rig; storyboard strokes are not supported")
             return {"CANCELLED"}
         _ensure_bounds(root, context.scene.phantom_settings.box_size)
-        floor_offset = _floor_offset(objects, root)
+        context.view_layer.update()
+        floor_offset = Vector((0.0, 0.0, _floor_offset(objects, root)))
         for obj in objects:
             _parent_to_root(obj, root, floor_offset)
         _set_active(context, root)
@@ -547,9 +585,10 @@ class PHANTOM_OT_import_model(bpy.types.Operator, ImportHelper):
             for source_collection in list(obj.users_collection):
                 if source_collection != collection:
                     source_collection.objects.unlink(obj)
-        floor_offset = _floor_offset(objects, root)
+        context.view_layer.update()
+        model_offset = _model_offset(objects, root)
         for obj in objects:
-            _parent_to_root(obj, root, floor_offset)
+            _parent_to_root(obj, root, model_offset)
         _set_active(context, root)
         self.report({"INFO"}, f"Loaded {path.name} into {root.name}")
         return {"FINISHED"}
@@ -567,6 +606,10 @@ class PHANTOM_OT_update_box(bpy.types.Operator):
     def execute(self, context):
         root = _phantom_root(context.active_object)
         _configure_bounds(root, context.scene.phantom_settings.box_size)
+        if root.type == "EMPTY":
+            root.empty_display_type = "ARROWS"
+            root.empty_display_size = 0.5
+        _detach_storyboard_objects(root)
         context.view_layer.update()
         _reposition_screens(context.scene, root)
         return {"FINISHED"}

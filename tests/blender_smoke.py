@@ -78,6 +78,7 @@ def main():
     root = one_object(ROOT)
     cage = one_object(CAGE)
     assert root.get("is_phantom") is True
+    assert root.empty_display_type == "ARROWS"
     bounds = root.constraints.get("PhantomBounds")
     assert bounds is not None
     assert bounds.use_min_z is True and bounds.use_max_z is False
@@ -102,13 +103,16 @@ def main():
     root.location.z = floor
 
     root.phantom_box_position.z += 2.0
+    root.phantom_box_position.y = 2.0
     active(root)
     assert bpy.ops.phantom.update_box() == {"FINISHED"}
     floor += 2.0
     assert round(cage.location.z - cage.dimensions.z / 2.0, 6) == round(floor, 6)
+    assert round(cage.location.y, 6) == 2.0
     bpy.context.view_layer.update()
     evaluated_root = root.evaluated_get(bpy.context.evaluated_depsgraph_get())
     assert round(evaluated_root.matrix_world.translation.z, 6) == round(floor, 6)
+    assert round(evaluated_root.matrix_world.translation.y, 6) == 2.0
 
     scene.phantom_settings.box_size = (4.0, 5.0, 6.0)
     active(root)
@@ -166,6 +170,17 @@ def main():
     assert len(loaded) == 1
     assert loaded[0].parent == root
     assert loaded[0].users_collection == (scene.phantom_settings.phantom_collection,)
+    loaded_points = [
+        obj.matrix_world @ Vector(corner)
+        for hierarchy_root in loaded
+        for obj in {hierarchy_root, *hierarchy_root.children_recursive}
+        if obj.type != "EMPTY"
+        for corner in obj.bound_box
+    ]
+    loaded_center_y = (
+        min(point.y for point in loaded_points) + max(point.y for point in loaded_points)
+    ) / 2.0
+    assert abs(loaded_center_y - 2.0) < 0.00001
     assert stroke.parent is None
 
     root.location.x += 50.0

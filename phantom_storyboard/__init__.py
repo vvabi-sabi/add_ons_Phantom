@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Phantom Storyboard",
     "author": "vvabi-sabi",
-    "version": (0, 1, 4),
+    "version": (0, 1, 5),
     "blender": (5, 2, 0),
     "location": "View3D > Sidebar > Phantom",
     "description": "Curved media backdrops and bounded 3D-to-2D phantom animation",
