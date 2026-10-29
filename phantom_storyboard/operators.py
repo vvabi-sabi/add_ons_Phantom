@@ -7,7 +7,7 @@ from pathlib import Path
 import bpy
 from bpy.props import BoolProperty, EnumProperty, StringProperty
 from bpy_extras.io_utils import ImportHelper
-from mathutils import Quaternion, Vector
+from mathutils import Matrix, Quaternion, Vector
 
 from .geometry import curved_screen_geometry, held_frame_groups, unit_cube_geometry
 
@@ -18,6 +18,19 @@ CAGE = "CAGE"
 SCREEN = "SCREEN"
 BAKE = "BAKE"
 SOURCE_VISIBILITY = "phantom_source_hide_render"
+MODEL_TYPES = {
+    "MESH",
+    "CURVE",
+    "SURFACE",
+    "META",
+    "FONT",
+    "CURVES",
+    "POINTCLOUD",
+    "VOLUME",
+    "ARMATURE",
+    "LATTICE",
+    "EMPTY",
+}
 
 
 def _phantom_collection(scene):
@@ -70,18 +83,34 @@ def _cage(root):
 
 
 def _configure_bounds(root, size):
-    center = Vector(root.get("phantom_box_center", root.location[:]))
     half = Vector(size) / 2.0
+    old_center = Vector(root.get("phantom_box_center", root.location[:]))
+    floor = root.get("phantom_floor_z")
     constraint = root.constraints.get("PhantomBounds")
     if constraint is None:
         constraint = root.constraints.new(type="LIMIT_LOCATION")
         constraint.name = "PhantomBounds"
     constraint.owner_space = "WORLD"
-    for axis, low, high in zip("xyz", center - half, center + half):
-        setattr(constraint, f"use_min_{axis}", True)
-        setattr(constraint, f"use_max_{axis}", True)
-        setattr(constraint, f"min_{axis}", low)
-        setattr(constraint, f"max_{axis}", high)
+    for axis in "xyz":
+        setattr(constraint, f"use_min_{axis}", False)
+        setattr(constraint, f"use_max_{axis}", False)
+
+    if floor is None:
+        old_size = Vector(root.get("phantom_box_size", size))
+        floor = old_center.z - old_size.z / 2.0
+        old_world = root.matrix_world.copy()
+        old_inverses = {child: child.matrix_parent_inverse.copy() for child in root.children}
+        root.delta_location.z += floor - old_center.z
+        root["phantom_location_z_offset"] = root.delta_location.z
+        new_world_inverse = root.matrix_world.inverted()
+        for child, parent_inverse in old_inverses.items():
+            child.matrix_parent_inverse = new_world_inverse @ old_world @ parent_inverse
+        root["phantom_floor_z"] = floor
+
+    center = Vector((old_center.x, old_center.y, floor + half.z))
+    constraint.use_min_z = True
+    constraint.min_z = floor
+    root["phantom_box_center"] = list(center)
     root["phantom_box_size"] = list(size)
 
     cage = _cage(root)
@@ -107,13 +136,57 @@ def _set_active(context, obj):
 
 
 def _top_ancestors(objects):
+    selected = set(objects)
     result = set()
-    for obj in objects:
-        while obj.parent is not None:
+    for obj in selected:
+        while obj.parent in selected:
             obj = obj.parent
-        if obj.get(KIND) not in {ROOT, CAGE, SCREEN, BAKE}:
+        if obj.parent is not None:
+            continue
+        hierarchy = {obj, *obj.children_recursive}
+        if (
+            obj.get(KIND) not in {ROOT, CAGE, SCREEN, BAKE}
+            and obj.type in MODEL_TYPES
+            and not any(child.type == "GREASEPENCIL" for child in hierarchy)
+        ):
             result.add(obj)
     return result
+
+
+def _world_floor(objects, fallback):
+    heights = []
+    for root in objects:
+        for obj in {root, *root.children_recursive}:
+            if obj.type != "EMPTY":
+                heights.extend((obj.matrix_world @ Vector(corner)).z for corner in obj.bound_box)
+    return min(heights, default=fallback)
+
+
+def _floor_offset(objects, root):
+    floor = float(root["phantom_floor_z"])
+    return floor - _world_floor(objects, floor)
+
+
+def _detach_import_extras(objects):
+    excluded = {"CAMERA", "LIGHT", "LIGHT_PROBE", "SPEAKER", "GREASEPENCIL"}
+    for obj in objects:
+        if obj.type in excluded and obj.parent is not None:
+            world_matrix = obj.matrix_world.copy()
+            obj.parent = None
+            obj.matrix_world = world_matrix
+
+
+def _detach_storyboard_objects(root):
+    grease_pencils = [obj for obj in _members(root) if obj.type == "GREASEPENCIL"]
+    detached = 0
+    for obj in grease_pencils:
+        if obj.parent is None or obj.parent.type == "GREASEPENCIL":
+            continue
+        world_matrix = obj.matrix_world.copy()
+        obj.parent = None
+        obj.matrix_world = world_matrix
+        detached += 1
+    return detached
 
 
 def _target_root(context):
@@ -124,20 +197,27 @@ def _target_root(context):
     return roots[0] if len(roots) == 1 else None
 
 
-def _parent_to_root(obj, root):
+def _parent_to_root(obj, root, floor_offset=0.0):
     basis = obj.matrix_basis.copy()
     obj.parent = root
-    obj.matrix_parent_inverse = root.matrix_world.inverted()
+    obj.matrix_parent_inverse = root.matrix_world.inverted() @ Matrix.Translation(
+        (0.0, 0.0, floor_offset)
+    )
     obj.matrix_basis = basis
+    obj["phantom_character_root"] = True
+
+
+def _ensure_bounds(root, fallback_size):
+    _configure_bounds(root, Vector(root.get("phantom_box_size", fallback_size)))
+    return _detach_storyboard_objects(root)
 
 
 def _clamp_to_box(root, location):
-    center = Vector(root.get("phantom_box_center", root.location[:]))
-    half = Vector(root.get("phantom_box_size", (8.0, 4.0, 5.0))) / 2.0
-    return Vector(
-        max(center[index] - half[index], min(center[index] + half[index], location[index]))
-        for index in range(3)
-    )
+    location = Vector(location)
+    floor = float(root.get("phantom_floor_z", root.location.z))
+    raw_floor = floor - float(root.get("phantom_location_z_offset", 0.0))
+    location.z = max(raw_floor, location.z)
+    return location
 
 
 def _screen_material(name, strength):
@@ -245,18 +325,23 @@ class PHANTOM_OT_create(bpy.types.Operator):
         settings = context.scene.phantom_settings
         collection = _phantom_collection(context.scene)
         selected = list(context.selected_objects)
+        model_roots = _top_ancestors(selected)
         active = context.active_object
-        center = active.matrix_world.translation.copy() if active else context.scene.cursor.location.copy()
+        anchor = active.matrix_world.translation.copy() if active else context.scene.cursor.location.copy()
+        floor = _world_floor(model_roots, anchor.z)
+        root_location = Vector((anchor.x, anchor.y, floor))
+        center = Vector((anchor.x, anchor.y, floor + settings.box_size[2] / 2.0))
 
         root = bpy.data.objects.new("Phantom", None)
         collection.objects.link(root)
         root.empty_display_type = "CUBE"
         root.empty_display_size = 0.35
-        root.location = center
+        root.location = root_location
         root.show_in_front = True
         root[KIND] = ROOT
         root["is_phantom"] = True
         root["phantom_id"] = uuid.uuid4().hex
+        root["phantom_floor_z"] = floor
         root["phantom_box_center"] = list(center)
 
         vertices, faces = unit_cube_geometry()
@@ -271,7 +356,7 @@ class PHANTOM_OT_create(bpy.types.Operator):
         root["phantom_cage"] = cage.name
         _configure_bounds(root, settings.box_size)
 
-        for obj in _top_ancestors(selected):
+        for obj in model_roots:
             _parent_to_root(obj, root)
 
         _set_active(context, root)
@@ -293,12 +378,100 @@ class PHANTOM_OT_attach_selected(bpy.types.Operator):
 
         objects = _top_ancestors(context.selected_objects)
         if not objects:
-            self.report({"ERROR"}, "Select an imported model or rig")
+            self.report({"ERROR"}, "Select the top-level model or rig; storyboard strokes are not supported")
             return {"CANCELLED"}
+        _ensure_bounds(root, context.scene.phantom_settings.box_size)
+        floor_offset = _floor_offset(objects, root)
         for obj in objects:
-            _parent_to_root(obj, root)
+            _parent_to_root(obj, root, floor_offset)
         _set_active(context, root)
         self.report({"INFO"}, f"Attached {len(objects)} object hierarchy(s) to {root.name}")
+        return {"FINISHED"}
+
+
+class PHANTOM_OT_import_model(bpy.types.Operator, ImportHelper):
+    bl_idname = "phantom.import_model"
+    bl_label = "Load 3D Model"
+    bl_description = "Import a 3D model from disk and attach it to the target Phantom"
+    bl_options = {"REGISTER", "UNDO"}
+
+    filename_ext = ""
+    filter_glob: StringProperty(
+        default="*.fbx;*.obj;*.gltf;*.glb;*.stl;*.ply",
+        options={"HIDDEN"},
+    )
+    target_name: StringProperty(options={"HIDDEN"})
+
+    def invoke(self, context, _event):
+        root = _target_root(context)
+        if root is None:
+            self.report({"ERROR"}, "Select the target Phantom first")
+            return {"CANCELLED"}
+        self.target_name = root.name
+        context.window_manager.fileselect_add(self)
+        return {"RUNNING_MODAL"}
+
+    def execute(self, context):
+        root = bpy.data.objects.get(self.target_name) or _target_root(context)
+        if root is None or root.get(KIND) != ROOT:
+            self.report({"ERROR"}, "Target Phantom no longer exists")
+            return {"CANCELLED"}
+        path = Path(self.filepath)
+        if not path.is_file():
+            self.report({"ERROR"}, "3D model file does not exist")
+            return {"CANCELLED"}
+
+        importers = {
+            ".fbx": bpy.ops.wm.fbx_import,
+            ".obj": bpy.ops.wm.obj_import,
+            ".gltf": bpy.ops.import_scene.gltf,
+            ".glb": bpy.ops.import_scene.gltf,
+            ".stl": bpy.ops.wm.stl_import,
+            ".ply": bpy.ops.wm.ply_import,
+        }
+        importer = importers.get(path.suffix.lower())
+        if importer is None:
+            self.report({"ERROR"}, f"Unsupported 3D format: {path.suffix}")
+            return {"CANCELLED"}
+
+        before = set(bpy.data.objects)
+        try:
+            result = importer(filepath=str(path))
+        except Exception as exc:
+            for obj in set(bpy.data.objects) - before:
+                bpy.data.objects.remove(obj, do_unlink=True)
+            self.report({"ERROR"}, f"Blender could not import this model: {exc}")
+            return {"CANCELLED"}
+        if "FINISHED" not in result:
+            for obj in set(bpy.data.objects) - before:
+                bpy.data.objects.remove(obj, do_unlink=True)
+            self.report({"ERROR"}, "Blender cancelled the model import")
+            return {"CANCELLED"}
+
+        imported = set(bpy.data.objects) - before
+        _detach_import_extras(imported)
+        objects = _top_ancestors(imported)
+        if not objects:
+            for obj in imported:
+                bpy.data.objects.remove(obj, do_unlink=True)
+            self.report({"ERROR"}, "The file did not contain a supported 3D model")
+            return {"CANCELLED"}
+
+        _ensure_bounds(root, context.scene.phantom_settings.box_size)
+        collection = _phantom_collection(context.scene)
+        for obj in imported:
+            if obj.type not in MODEL_TYPES:
+                continue
+            if obj.name not in collection.objects:
+                collection.objects.link(obj)
+            for source_collection in list(obj.users_collection):
+                if source_collection != collection:
+                    source_collection.objects.unlink(obj)
+        floor_offset = _floor_offset(objects, root)
+        for obj in objects:
+            _parent_to_root(obj, root, floor_offset)
+        _set_active(context, root)
+        self.report({"INFO"}, f"Loaded {path.name} into {root.name}")
         return {"FINISHED"}
 
 
@@ -340,6 +513,9 @@ class PHANTOM_OT_control(bpy.types.Operator):
 
     def invoke(self, context, _event):
         root = _phantom_root(context.active_object)
+        detached = _ensure_bounds(root, context.scene.phantom_settings.box_size)
+        if detached:
+            self.report({"WARNING"}, f"Detached {detached} storyboard stroke object(s) from the Phantom")
         self._root_name = root.name
         context.window_manager.modal_handler_add(self)
         context.workspace.status_text_set(
@@ -702,6 +878,7 @@ class PHANTOM_OT_use_bake(bpy.types.Operator):
 classes = (
     PHANTOM_OT_create,
     PHANTOM_OT_attach_selected,
+    PHANTOM_OT_import_model,
     PHANTOM_OT_update_box,
     PHANTOM_OT_toggle_box,
     PHANTOM_OT_control,

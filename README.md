@@ -1,12 +1,12 @@
 # Phantom Storyboard
 
-A small Blender 4.2+ add-on for staging 3D characters as bounded **Phantoms** and baking their camera view into held 2D animation.
+A small Blender 5.2+ add-on for staging 3D characters as bounded **Phantoms** and baking their camera view into held 2D animation.
 
 ## What works in v0.1
 
 - Wrap a selected model/rig hierarchy in a marked Phantom root, or attach it to an existing Phantom later.
-- Keep that root inside a visible wire cage with a `Limit Location` constraint.
-- Move it with `W/A/S/D`, `Q/E`, rotate with the arrow keys, and insert timeline keys automatically or with `K`.
+- Place the Phantom pivot on the cage floor and prevent movement below it while leaving the side walls and ceiling open.
+- Move only its attached 3D model with `W/A/S/D`, `Q/E`, rotate with the arrow keys, and insert timeline keys automatically or with `K`. Storyboard Grease Pencil strokes are excluded and detached from older Phantoms automatically.
 - Create multiple independent Phantoms.
 - Create a curved, UV-mapped backdrop and load an image, GIF, or Blender-supported video.
 - Illuminate the scene with an Area Light attached to the backdrop. The backdrop material itself is emissive, so Cycles can also use it as an emitting surface.
@@ -24,8 +24,9 @@ Enable **Phantom Storyboard**. Its panel appears in **3D Viewport â†’ Sidebar â†
 
 1. Save the `.blend` file. Bake output is written beside it under `phantom_bakes/`.
 2. Select the top-level character rig/model and click **Create Phantom**.
-   - If the Phantom already exists, select the imported model and click **Attach Selected to Phantom**. With several Phantoms, Shift-select the target Phantom last so it is active.
-3. Set **Cage size**, click **Apply Cage Size**, then click **Control Phantom**.
+   - If the Phantom already exists, select it and click **Load 3D Model** to import FBX, OBJ, glTF/GLB, STL, or PLY directly from disk.
+      - For a model already in the scene, select it and click **Attach Selected to Phantom**. With several Phantoms, Shift-select the target Phantom last so it is active.
+3. Set **Cage size**, click **Apply Cage Size**, then click **Control Phantom**. The floor blocks downward movement; the side walls are visual guides and do not block movement.
 4. Use `W/A/S/D` for X/Y, `Q/E` for Z, arrows for Z rotation, and `Esc` to leave control mode.
 5. Set the scene camera and frame range.
 6. Pick **On ones** (24 poses at 24 fps) or **On twos** (12 poses at 24 fps), then click **Bake to 2D Projection**.

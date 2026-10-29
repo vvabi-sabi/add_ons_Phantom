@@ -1,11 +1,11 @@
 schema_version = "1.0.0"
 id = "phantom_storyboard"
-version = "0.1.1"
+version = "0.1.2"
 name = "Phantom Storyboard"
 tagline = "Animate bounded 3D phantoms as held 2D projections"
 maintainer = "vvabi-sabi"
 type = "add-on"
-blender_version_min = "4.2.0"
+blender_version_min = "5.2.0"
 license = ["SPDX:GPL-3.0-or-later"]
 
 [permissions]

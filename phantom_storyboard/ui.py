@@ -19,6 +19,7 @@ class PHANTOM_PT_storyboard(bpy.types.Panel):
         box.label(text="Phantom", icon="ARMATURE_DATA")
         box.label(text="Select a rig/model before Create", icon="INFO")
         box.operator("phantom.create", icon="ADD")
+        box.operator("phantom.import_model", icon="IMPORT")
         box.operator("phantom.attach_selected", icon="OUTLINER_OB_ARMATURE")
         box.prop(settings, "is_box_visible")
         box.prop(settings, "box_size")

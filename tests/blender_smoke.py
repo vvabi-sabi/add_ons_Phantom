@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 
 import bpy
+from mathutils import Vector
 
 
 PROJECT_ROOT = Path(__file__).parents[1]
@@ -45,21 +46,82 @@ def main():
     root = one_object(ROOT)
     cage = one_object(CAGE)
     assert root.get("is_phantom") is True
-    assert root.constraints.get("PhantomBounds") is not None
+    bounds = root.constraints.get("PhantomBounds")
+    assert bounds is not None
+    assert bounds.use_min_z is True and bounds.use_max_z is False
+    assert not any((bounds.use_min_x, bounds.use_max_x, bounds.use_min_y, bounds.use_max_y))
     assert cage.hide_render is True
     assert cube.parent == root
+    floor = float(root["phantom_floor_z"])
+    assert round(root.location.z, 6) == round(floor, 6)
+    assert round(cage.location.z - cage.dimensions.z / 2.0, 6) == round(floor, 6)
+
+    root.location.x = 100.0
+    root.location.z = floor - 10.0
+    bpy.context.view_layer.update()
+    evaluated_root = root.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    assert evaluated_root.matrix_world.translation.x > 99.0
+    assert round(evaluated_root.matrix_world.translation.z, 6) == round(floor, 6)
+    root.location.x = 0.0
+    root.location.z = floor
 
     scene.phantom_settings.box_size = (4.0, 5.0, 6.0)
     active(root)
     assert bpy.ops.phantom.update_box() == {"FINISHED"}
     assert tuple(round(value, 4) for value in cage.dimensions) == (4.0, 5.0, 6.0)
 
-    bpy.ops.mesh.primitive_uv_sphere_add(location=(1.0, 0.0, 0.0))
+    bpy.ops.mesh.primitive_uv_sphere_add(location=(1.0, 0.0, 10.0))
     accessory = bpy.context.active_object
+    accessory.keyframe_insert(data_path="location", frame=1)
+    accessory.location.z = 11.0
+    accessory.keyframe_insert(data_path="location", frame=2)
+    scene.frame_set(1)
     root.select_set(True)
     bpy.context.view_layer.objects.active = root
     assert bpy.ops.phantom.attach_selected() == {"FINISHED"}
     assert accessory.parent == root
+    accessory_floor = min(
+        (accessory.matrix_world @ Vector(corner)).z for corner in accessory.bound_box
+    )
+    assert round(accessory_floor, 6) == round(floor, 6)
+    scene.frame_set(2)
+    animated_floor = min(
+        (accessory.matrix_world @ Vector(corner)).z for corner in accessory.bound_box
+    )
+    assert round(animated_floor, 6) == round(floor + 1.0, 6)
+    scene.frame_set(1)
+
+    stroke_data = bpy.data.grease_pencils.new("SmokeStrokeData")
+    stroke = bpy.data.objects.new("Stroke.001", stroke_data)
+    scene.collection.objects.link(stroke)
+    stroke.parent = root
+    stroke.matrix_parent_inverse = root.matrix_world.inverted()
+    try:
+        bpy.ops.phantom.import_model(
+            filepath="/tmp/phantom_missing_model.obj", target_name=root.name
+        )
+    except RuntimeError as exc:
+        assert "3D model file does not exist" in str(exc)
+    else:
+        raise AssertionError("Missing model import should fail")
+    assert stroke.parent == root
+
+    model_path = Path("/tmp/phantom_loaded_model.obj")
+    model_path.write_text(
+        "o LoadedModel\nv -1 -1 0\nv 1 -1 0\nv 0 1 2\nf 1 2 3\n"
+    )
+    assert bpy.ops.phantom.import_model(
+        filepath=str(model_path), target_name=root.name
+    ) == {"FINISHED"}
+    loaded = [
+        obj
+        for obj in bpy.data.objects
+        if obj.get("phantom_character_root") and obj not in {cube, accessory}
+    ]
+    assert len(loaded) == 1
+    assert loaded[0].parent == root
+    assert loaded[0].users_collection == (scene.phantom_settings.phantom_collection,)
+    assert stroke.parent is None
 
     camera_data = bpy.data.cameras.new("SmokeCamera")
     camera = bpy.data.objects.new("SmokeCamera", camera_data)
@@ -96,6 +158,27 @@ def main():
     output_dir = Path(bpy.path.abspath(f"//phantom_bakes/Phantom_{root['phantom_id'][:8]}"))
     assert (output_dir / "phantom_000001.png").is_file()
     assert (output_dir / "phantom_000002.png").is_file()
+
+    legacy = bpy.data.objects.new("LegacyPhantom", None)
+    scene.collection.objects.link(legacy)
+    legacy[KIND] = ROOT
+    legacy["is_phantom"] = True
+    legacy["phantom_box_center"] = (0.0, 0.0, 2.5)
+    legacy["phantom_box_size"] = (4.0, 4.0, 5.0)
+    legacy.location.z = 2.5
+    legacy.keyframe_insert(data_path="location", frame=1)
+    legacy.location.z = 3.5
+    legacy.keyframe_insert(data_path="location", frame=2)
+    active(legacy)
+    assert bpy.ops.phantom.update_box() == {"FINISHED"}
+    scene.frame_set(1)
+    bpy.context.view_layer.update()
+    evaluated_legacy = legacy.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    assert round(evaluated_legacy.matrix_world.translation.z, 6) == 0.0
+    scene.frame_set(2)
+    bpy.context.view_layer.update()
+    evaluated_legacy = legacy.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    assert round(evaluated_legacy.matrix_world.translation.z, 6) == 1.0
     print("PHANTOM_SMOKE_OK")
 
 
