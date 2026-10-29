@@ -195,6 +195,48 @@ def _camera_floor_position(scene, anchor, fallback_floor):
     return camera.matrix_world @ Vector((local_anchor.x, bottom_y, local_anchor.z))
 
 
+def _screen_transform(scene, root, distance):
+    cage = _cage(root)
+    if cage is None:
+        raise ValueError("The selected Phantom has no cage")
+
+    camera = scene.camera
+    if camera is None:
+        location = cage.matrix_world.translation + Vector(
+            (0.0, cage.dimensions.y / 2.0 + distance, 0.0)
+        )
+        return location, Quaternion()
+
+    camera_inverse = camera.matrix_world.inverted()
+    cage_center = camera_inverse @ cage.matrix_world.translation
+    cage_corners = [
+        camera_inverse @ (cage.matrix_world @ Vector(corner)) for corner in cage.bound_box
+    ]
+    location = camera.matrix_world @ Vector(
+        (cage_center.x, cage_center.y, min(corner.z for corner in cage_corners) - distance)
+    )
+    rotation = camera.matrix_world.to_quaternion() @ Quaternion(
+        (1.0, 0.0, 0.0), -math.pi / 2.0
+    )
+    return location, rotation
+
+
+def _position_screen(scene, screen, root):
+    location, rotation = _screen_transform(
+        scene, root, float(screen["phantom_screen_distance"])
+    )
+    screen.location = location
+    screen.rotation_mode = "QUATERNION"
+    screen.rotation_quaternion = rotation
+
+
+def _reposition_screens(scene, root):
+    owner_id = root.get("phantom_id")
+    for screen in bpy.data.objects:
+        if screen.get(KIND) == SCREEN and screen.get("phantom_cage_owner_id") == owner_id:
+            _position_screen(scene, screen, root)
+
+
 def _floor_offset(objects, root):
     floor = float(root["phantom_floor_z"])
     return floor - _world_floor(objects, floor)
@@ -525,6 +567,8 @@ class PHANTOM_OT_update_box(bpy.types.Operator):
     def execute(self, context):
         root = _phantom_root(context.active_object)
         _configure_bounds(root, context.scene.phantom_settings.box_size)
+        context.view_layer.update()
+        _reposition_screens(context.scene, root)
         return {"FINISHED"}
 
 
@@ -645,6 +689,10 @@ class PHANTOM_OT_create_screen(bpy.types.Operator):
 
     def execute(self, context):
         settings = context.scene.phantom_settings
+        target = _target_root(context)
+        if target is None or _cage(target) is None:
+            self.report({"ERROR"}, "Select a Phantom with a cage first")
+            return {"CANCELLED"}
         vertices, faces, uvs = curved_screen_geometry(
             settings.screen_width,
             settings.screen_height,
@@ -654,25 +702,10 @@ class PHANTOM_OT_create_screen(bpy.types.Operator):
         collection = _phantom_collection(context.scene)
         screen = _new_mesh_object("Phantom_Backdrop", vertices, faces, collection)
         screen[KIND] = SCREEN
-        target = _target_root(context)
-        target_location = (
-            target.matrix_world.translation.copy()
-            if target is not None
-            else context.scene.cursor.location.copy()
-        )
-        camera = context.scene.camera
-        if camera is not None:
-            direction = target_location - camera.matrix_world.translation
-            if direction.length == 0.0:
-                direction = camera.matrix_world.to_quaternion() @ Vector((0.0, 0.0, -1.0))
-            direction.normalize()
-            screen.location = target_location + direction * settings.screen_distance
-            screen.rotation_mode = "QUATERNION"
-            screen.rotation_quaternion = camera.matrix_world.to_quaternion() @ Quaternion(
-                (1.0, 0.0, 0.0), -math.pi / 2.0
-            )
-        else:
-            screen.location = target_location + Vector((0.0, settings.screen_distance, 0.0))
+        screen["phantom_cage_owner_id"] = target["phantom_id"]
+        screen["phantom_screen_distance"] = settings.screen_distance
+        context.view_layer.update()
+        _position_screen(context.scene, screen, target)
         uv_layer = screen.data.uv_layers.new(name="UVMap")
         for polygon in screen.data.polygons:
             for loop_index in polygon.loop_indices:

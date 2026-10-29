@@ -168,15 +168,38 @@ def main():
     assert loaded[0].users_collection == (scene.phantom_settings.phantom_collection,)
     assert stroke.parent is None
 
+    root.location.x += 50.0
+    bpy.context.view_layer.update()
     active(root)
     assert bpy.ops.phantom.create_screen() == {"FINISHED"}
     screen = one_object(SCREEN)
     assert screen.data.uv_layers.active is not None
     assert any(child.type == "LIGHT" for child in screen.children)
-    assert (screen.location - camera.location).length > (root.location - camera.location).length
+    assert screen["phantom_cage_owner_id"] == root["phantom_id"]
+    camera_inverse = camera.matrix_world.inverted()
+    screen_camera = camera_inverse @ screen.matrix_world.translation
+    cage_camera = camera_inverse @ cage.matrix_world.translation
+    cage_corner_depths = [
+        (camera_inverse @ (cage.matrix_world @ Vector(corner))).z
+        for corner in cage.bound_box
+    ]
+    assert abs(screen_camera.x - cage_camera.x) < 0.00001
+    assert abs(screen_camera.y - cage_camera.y) < 0.00001
+    assert abs(
+        screen_camera.z
+        - (min(cage_corner_depths) - scene.phantom_settings.screen_distance)
+    ) < 0.00001
     screen_depths = [vertex.co.y for vertex in screen.data.vertices]
     assert min(screen_depths) < 0.0
     assert round(max(screen_depths), 6) == 0.0
+
+    old_screen_location = screen.location.copy()
+    root.phantom_box_position.x += 1.0
+    active(root)
+    assert bpy.ops.phantom.update_box() == {"FINISHED"}
+    assert (screen.location - old_screen_location).length > 0.5
+    root.location.x -= 50.0
+    bpy.context.view_layer.update()
 
     active(root)
     smoke_file = Path("/tmp/phantom_storyboard_smoke.blend")

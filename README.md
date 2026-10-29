@@ -32,7 +32,7 @@ Enable **Phantom Storyboard**. Its panel appears in **3D Viewport â†’ Sidebar â†
 6. Pick **On ones** (24 poses at 24 fps) or **On twos** (12 poses at 24 fps), then click **Bake to 2D Projection**.
 7. Use **Use 2D** / **Use 3D** to choose what final renders see.
 
-For a backdrop, select the target Phantom, set **Distance behind**, and create the screen. With an active camera it is placed behind the Phantom, faces the camera, and curves toward it. Keep the new screen selected and click **Load Image / Video**.
+For a backdrop, select the target Phantom, set **Distance behind**, and create the screen. It is tied to `Phantom_Cage`, placed behind the cage's farthest camera-facing depth, and follows cage size/position changes after **Apply Size / Position**. Keep the new screen selected and click **Load Image / Video**.
 
 ## Bake behavior
 
