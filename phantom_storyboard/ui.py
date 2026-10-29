@@ -23,8 +23,12 @@ class PHANTOM_PT_storyboard(bpy.types.Panel):
         box.operator("phantom.attach_selected", icon="OUTLINER_OB_ARMATURE")
         box.prop(settings, "is_box_visible")
         box.prop(settings, "box_size")
+        if root is not None:
+            box.prop(root, "phantom_box_position")
+        else:
+            box.label(text="Select a Phantom to edit cage position")
         row = box.row(align=True)
-        row.operator("phantom.update_box", icon="FILE_REFRESH")
+        row.operator("phantom.update_box", text="Apply Size / Position", icon="FILE_REFRESH")
         row.operator("phantom.toggle_box", text="Toggle", icon="HIDE_OFF")
 
         controls = layout.box()

@@ -66,9 +66,15 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
     bpy.types.Scene.phantom_settings = PointerProperty(type=PhantomSettings)
+    bpy.types.Object.phantom_box_position = FloatVectorProperty(
+        name="Cage floor position",
+        subtype="TRANSLATION",
+        size=3,
+    )
 
 
 def unregister():
+    del bpy.types.Object.phantom_box_position
     del bpy.types.Scene.phantom_settings
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)

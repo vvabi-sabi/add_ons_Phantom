@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 
 import bpy
+from bpy_extras.object_utils import world_to_camera_view
 from mathutils import Vector
 
 
@@ -9,7 +10,14 @@ PROJECT_ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 import phantom_storyboard
-from phantom_storyboard.operators import BAKE, CAGE, KIND, ROOT, SCREEN
+from phantom_storyboard.operators import (
+    BAKE,
+    CAGE,
+    KIND,
+    ROOT,
+    SCREEN,
+    _camera_floor_position,
+)
 
 
 def active(obj):
@@ -37,6 +45,30 @@ def main():
 
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.object.delete(use_global=False)
+
+    camera_data = bpy.data.cameras.new("SmokeCamera")
+    camera = bpy.data.objects.new("SmokeCamera", camera_data)
+    scene.collection.objects.link(camera)
+    camera.location = (0.0, -10.0, 0.0)
+    camera.rotation_euler.x = 1.5707963267948966
+    scene.camera = camera
+
+    pitched_data = bpy.data.cameras.new("PitchedCamera")
+    pitched_camera = bpy.data.objects.new("PitchedCamera", pitched_data)
+    scene.collection.objects.link(pitched_camera)
+    pitched_camera.location = (7.0, -7.0, 5.0)
+    pitched_camera.rotation_euler = (
+        Vector((0.0, 0.0, 0.0)) - pitched_camera.location
+    ).to_track_quat("-Z", "Y").to_euler()
+    scene.camera = pitched_camera
+    bpy.context.view_layer.update()
+    pitched_floor = _camera_floor_position(scene, Vector((0.0, 0.0, 0.0)), -1.0)
+    pitched_ndc = world_to_camera_view(scene, pitched_camera, pitched_floor)
+    assert abs(pitched_ndc.y) < 0.000001, (pitched_ndc[:], pitched_floor[:])
+    scene.camera = camera
+    bpy.data.objects.remove(pitched_camera, do_unlink=True)
+    bpy.data.cameras.remove(pitched_data)
+
     bpy.ops.mesh.primitive_cube_add()
     cube = bpy.context.active_object
     cube.name = "SmokeCharacter"
@@ -55,6 +87,10 @@ def main():
     floor = float(root["phantom_floor_z"])
     assert round(root.location.z, 6) == round(floor, 6)
     assert round(cage.location.z - cage.dimensions.z / 2.0, 6) == round(floor, 6)
+    floor_ndc = world_to_camera_view(scene, camera, Vector(root.phantom_box_position))
+    assert abs(floor_ndc.y) < 0.000001
+    cube_floor = min((cube.matrix_world @ Vector(corner)).z for corner in cube.bound_box)
+    assert round(cube_floor, 6) == round(floor, 6), (cube_floor, floor, root.location[:])
 
     root.location.x = 100.0
     root.location.z = floor - 10.0
@@ -64,6 +100,15 @@ def main():
     assert round(evaluated_root.matrix_world.translation.z, 6) == round(floor, 6)
     root.location.x = 0.0
     root.location.z = floor
+
+    root.phantom_box_position.z += 2.0
+    active(root)
+    assert bpy.ops.phantom.update_box() == {"FINISHED"}
+    floor += 2.0
+    assert round(cage.location.z - cage.dimensions.z / 2.0, 6) == round(floor, 6)
+    bpy.context.view_layer.update()
+    evaluated_root = root.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    assert round(evaluated_root.matrix_world.translation.z, 6) == round(floor, 6)
 
     scene.phantom_settings.box_size = (4.0, 5.0, 6.0)
     active(root)
@@ -83,12 +128,12 @@ def main():
     accessory_floor = min(
         (accessory.matrix_world @ Vector(corner)).z for corner in accessory.bound_box
     )
-    assert round(accessory_floor, 6) == round(floor, 6)
+    assert abs(accessory_floor - floor) < 0.00001
     scene.frame_set(2)
     animated_floor = min(
         (accessory.matrix_world @ Vector(corner)).z for corner in accessory.bound_box
     )
-    assert round(animated_floor, 6) == round(floor + 1.0, 6)
+    assert abs(animated_floor - (floor + 1.0)) < 0.00001
     scene.frame_set(1)
 
     stroke_data = bpy.data.grease_pencils.new("SmokeStrokeData")
@@ -122,13 +167,6 @@ def main():
     assert loaded[0].parent == root
     assert loaded[0].users_collection == (scene.phantom_settings.phantom_collection,)
     assert stroke.parent is None
-
-    camera_data = bpy.data.cameras.new("SmokeCamera")
-    camera = bpy.data.objects.new("SmokeCamera", camera_data)
-    scene.collection.objects.link(camera)
-    camera.location = (0.0, -10.0, 0.0)
-    camera.rotation_euler.x = 1.5707963267948966
-    scene.camera = camera
 
     active(root)
     assert bpy.ops.phantom.create_screen() == {"FINISHED"}

@@ -101,15 +101,28 @@ def _configure_bounds(root, size):
         old_world = root.matrix_world.copy()
         old_inverses = {child: child.matrix_parent_inverse.copy() for child in root.children}
         root.delta_location.z += floor - old_center.z
-        root["phantom_location_z_offset"] = root.delta_location.z
         new_world_inverse = root.matrix_world.inverted()
         for child, parent_inverse in old_inverses.items():
             child.matrix_parent_inverse = new_world_inverse @ old_world @ parent_inverse
         root["phantom_floor_z"] = floor
 
-    center = Vector((old_center.x, old_center.y, floor + half.z))
+    old_position = Vector(
+        root.get("phantom_box_applied_position", (old_center.x, old_center.y, floor))
+    )
+    if "phantom_box_applied_position" not in root:
+        root.phantom_box_position = old_position
+    desired_position = Vector(root.phantom_box_position)
+    position_delta = desired_position - old_position
+    if position_delta.length_squared > 0.0:
+        root.delta_location += position_delta
+
+    floor = desired_position.z
+    center = Vector((desired_position.x, desired_position.y, floor + half.z))
     constraint.use_min_z = True
     constraint.min_z = floor
+    root["phantom_floor_z"] = floor
+    root["phantom_location_z_offset"] = root.delta_location.z
+    root["phantom_box_applied_position"] = list(desired_position)
     root["phantom_box_center"] = list(center)
     root["phantom_box_size"] = list(size)
 
@@ -160,6 +173,26 @@ def _world_floor(objects, fallback):
             if obj.type != "EMPTY":
                 heights.extend((obj.matrix_world @ Vector(corner)).z for corner in obj.bound_box)
     return min(heights, default=fallback)
+
+
+def _camera_floor_position(scene, anchor, fallback_floor):
+    camera = scene.camera
+    if camera is None:
+        return Vector((anchor.x, anchor.y, fallback_floor))
+
+    local_anchor = camera.matrix_world.inverted() @ anchor
+    distance = -local_anchor.z
+    if distance <= camera.data.clip_start:
+        return Vector((anchor.x, anchor.y, fallback_floor))
+
+    frame = camera.data.view_frame(scene=scene)
+    bottom_y = min(
+        corner.y
+        if camera.data.type == "ORTHO"
+        else corner.y * distance / abs(corner.z)
+        for corner in frame
+    )
+    return camera.matrix_world @ Vector((local_anchor.x, bottom_y, local_anchor.z))
 
 
 def _floor_offset(objects, root):
@@ -328,20 +361,23 @@ class PHANTOM_OT_create(bpy.types.Operator):
         model_roots = _top_ancestors(selected)
         active = context.active_object
         anchor = active.matrix_world.translation.copy() if active else context.scene.cursor.location.copy()
-        floor = _world_floor(model_roots, anchor.z)
-        root_location = Vector((anchor.x, anchor.y, floor))
-        center = Vector((anchor.x, anchor.y, floor + settings.box_size[2] / 2.0))
+        model_floor = _world_floor(model_roots, anchor.z)
+        position = _camera_floor_position(context.scene, anchor, model_floor)
+        floor = position.z
+        center = Vector((position.x, position.y, floor + settings.box_size[2] / 2.0))
 
         root = bpy.data.objects.new("Phantom", None)
         collection.objects.link(root)
         root.empty_display_type = "CUBE"
         root.empty_display_size = 0.35
-        root.location = root_location
+        root.location = position
         root.show_in_front = True
         root[KIND] = ROOT
         root["is_phantom"] = True
         root["phantom_id"] = uuid.uuid4().hex
         root["phantom_floor_z"] = floor
+        root.phantom_box_position = position
+        root["phantom_box_applied_position"] = list(position)
         root["phantom_box_center"] = list(center)
 
         vertices, faces = unit_cube_geometry()
@@ -355,9 +391,11 @@ class PHANTOM_OT_create(bpy.types.Operator):
         cage.hide_viewport = not settings.is_box_visible
         root["phantom_cage"] = cage.name
         _configure_bounds(root, settings.box_size)
+        context.view_layer.update()
 
+        floor_offset = _floor_offset(model_roots, root)
         for obj in model_roots:
-            _parent_to_root(obj, root)
+            _parent_to_root(obj, root, floor_offset)
 
         _set_active(context, root)
         self.report({"INFO"}, f"Created {root.name}")
@@ -477,7 +515,7 @@ class PHANTOM_OT_import_model(bpy.types.Operator, ImportHelper):
 
 class PHANTOM_OT_update_box(bpy.types.Operator):
     bl_idname = "phantom.update_box"
-    bl_label = "Apply Cage Size"
+    bl_label = "Apply Cage Size / Position"
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
