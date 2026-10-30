@@ -22,11 +22,30 @@ class PHANTOM_PT_storyboard(bpy.types.Panel):
         box.operator("phantom.import_model", icon="IMPORT")
         box.operator("phantom.attach_selected", icon="OUTLINER_OB_ARMATURE")
         box.prop(settings, "is_box_visible")
-        box.prop(settings, "box_size")
-        if root is not None:
-            box.prop(root, "phantom_box_position")
-        else:
-            box.label(text="Select a Phantom to edit cage position")
+        size_section = box.box()
+        size_section.prop(
+            settings,
+            "show_cage_size",
+            text="Cage Size",
+            icon="TRIA_DOWN" if settings.show_cage_size else "TRIA_RIGHT",
+            emboss=False,
+        )
+        if settings.show_cage_size:
+            size_section.prop(settings, "box_size", text="")
+
+        position_section = box.box()
+        position_section.prop(
+            settings,
+            "show_cage_position",
+            text="Cage Floor Position",
+            icon="TRIA_DOWN" if settings.show_cage_position else "TRIA_RIGHT",
+            emboss=False,
+        )
+        if settings.show_cage_position:
+            if root is not None:
+                position_section.prop(root, "phantom_box_position", text="")
+            else:
+                position_section.label(text="Select a Phantom")
         row = box.row(align=True)
         row.operator("phantom.update_box", text="Apply Size / Position", icon="FILE_REFRESH")
         row.operator("phantom.toggle_box", text="Toggle", icon="HIDE_OFF")
@@ -37,7 +56,7 @@ class PHANTOM_PT_storyboard(bpy.types.Panel):
         controls.prop(settings, "move_step")
         controls.prop(settings, "auto_key")
         controls.operator("phantom.control", icon="PLAY")
-        controls.label(text="WASD / Q E / arrows / K / Esc")
+        controls.label(text="WASD local / Q E vertical / arrows rotate")
 
         bake = layout.box()
         bake.label(text="2D Projection", icon="RENDER_ANIMATION")

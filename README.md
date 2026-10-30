@@ -6,7 +6,7 @@ A small Blender 5.2+ add-on for staging 3D characters as bounded **Phantoms** an
 
 - Wrap a selected model/rig hierarchy in a marked Phantom controller Empty, or attach it to an existing Phantom later. The arrow-shaped controller stores movement keys and constraints and must not be deleted.
 - Align a new cage floor with the active camera's lower frame edge at the character depth, and prevent movement below it while leaving the side walls and ceiling open.
-- Move only its attached 3D model with `W/A/S/D`, `Q/E`, rotate with the arrow keys, and insert timeline keys automatically or with `K`. Storyboard Grease Pencil strokes are excluded and detached from older Phantoms automatically.
+- Move only its attached 3D model with local-space `W/A/S/D` (forward follows the controller heading), world-vertical `Q/E`, rotate with the arrow keys, and insert timeline keys automatically or with `K`. Storyboard Grease Pencil strokes are excluded and detached from older Phantoms automatically.
 - Create multiple independent Phantoms.
 - Create a curved, UV-mapped backdrop and load an image, GIF, or Blender-supported video.
 - Illuminate the scene with an Area Light attached to the backdrop. The backdrop material itself is emissive, so Cycles can also use it as an emitting surface.
@@ -26,8 +26,8 @@ Enable **Phantom Storyboard**. Its panel appears in **3D Viewport â†’ Sidebar â†
 2. Select the top-level character rig/model and click **Create Phantom**.
    - If the Phantom already exists, select it and click **Load 3D Model** to import FBX, OBJ, glTF/GLB, STL, or PLY directly from disk. Loaded models are centered on the cage floor position in X/Y and placed on the floor in Z.
       - For a model already in the scene, select it and click **Attach Selected to Phantom**. With several Phantoms, Shift-select the target Phantom last so it is active.
-3. New cages align to the active camera's lower frame edge. Adjust **Cage size** and the selected Phantom's **Cage floor position**, then click **Apply Size / Position**. The floor blocks downward movement; the side walls are visual guides and do not block movement.
-4. Use `W/A/S/D` for X/Y, `Q/E` for Z, arrows for Z rotation, and `Esc` to leave control mode.
+3. New cages align to the active camera's lower frame edge. Expand the collapsible **Cage Size** and **Cage Floor Position** sections as needed, then click **Apply Size / Position**. The floor blocks downward movement; the side walls are visual guides and do not block movement.
+4. Use `W/A/S/D` for local forward/back/left/right, `Q/E` for world Z, arrows for Z rotation, and `Esc` to leave control mode.
 5. Set the scene camera and frame range.
 6. Pick **On ones** (24 poses at 24 fps) or **On twos** (12 poses at 24 fps), then click **Bake to 2D Projection**.
 7. Use **Use 2D** / **Use 3D** to choose what final renders see.

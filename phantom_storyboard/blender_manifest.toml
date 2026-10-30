@@ -1,6 +1,6 @@
 schema_version = "1.0.0"
 id = "phantom_storyboard"
-version = "0.1.5"
+version = "0.1.6"
 name = "Phantom Storyboard"
 tagline = "Animate bounded 3D phantoms as held 2D projections"
 maintainer = "vvabi-sabi"

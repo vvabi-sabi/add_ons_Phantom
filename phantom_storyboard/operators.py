@@ -332,6 +332,25 @@ def _clamp_to_box(root, location):
     return location
 
 
+def _movement_delta(root, key, step):
+    if key == "Q":
+        return Vector((0.0, 0.0, -step))
+    if key == "E":
+        return Vector((0.0, 0.0, step))
+
+    local_direction = {
+        "W": Vector((0.0, 1.0, 0.0)),
+        "S": Vector((0.0, -1.0, 0.0)),
+        "A": Vector((-1.0, 0.0, 0.0)),
+        "D": Vector((1.0, 0.0, 0.0)),
+    }[key]
+    world_direction = root.matrix_basis.to_quaternion() @ local_direction
+    world_direction.z = 0.0
+    if world_direction.length_squared == 0.0:
+        return Vector((0.0, 0.0, 0.0))
+    return world_direction.normalized() * step
+
+
 def _screen_material(name, strength):
     material = bpy.data.materials.new(name)
     material.use_nodes = True
@@ -628,7 +647,7 @@ class PHANTOM_OT_toggle_box(bpy.types.Operator):
 class PHANTOM_OT_control(bpy.types.Operator):
     bl_idname = "phantom.control"
     bl_label = "Control Phantom"
-    bl_description = "WASD: X/Y, Q/E: Z, arrows: rotate, K: keyframe, Esc: stop"
+    bl_description = "WASD: local movement, Q/E: world height, arrows: rotate, K: keyframe, Esc: stop"
 
     _root_name = ""
 
@@ -644,7 +663,7 @@ class PHANTOM_OT_control(bpy.types.Operator):
         self._root_name = root.name
         context.window_manager.modal_handler_add(self)
         context.workspace.status_text_set(
-            "Phantom: WASD move, Q/E height, arrows rotate, K keyframe, Esc stop"
+            "Phantom: WASD local move, Q/E height, arrows rotate, K keyframe, Esc stop"
         )
         return {"RUNNING_MODAL"}
 
@@ -658,17 +677,12 @@ class PHANTOM_OT_control(bpy.types.Operator):
 
         settings = context.scene.phantom_settings
         step = settings.move_step
-        moves = {
-            "W": Vector((0.0, step, 0.0)),
-            "S": Vector((0.0, -step, 0.0)),
-            "A": Vector((-step, 0.0, 0.0)),
-            "D": Vector((step, 0.0, 0.0)),
-            "Q": Vector((0.0, 0.0, -step)),
-            "E": Vector((0.0, 0.0, step)),
-        }
+        move_keys = {"W", "S", "A", "D", "Q", "E"}
         changed = False
-        if event.type in moves:
-            root.location = _clamp_to_box(root, root.location + moves[event.type])
+        if event.type in move_keys:
+            root.location = _clamp_to_box(
+                root, root.location + _movement_delta(root, event.type, step)
+            )
             changed = True
         elif event.type in {"LEFT_ARROW", "RIGHT_ARROW"}:
             direction = 1.0 if event.type == "LEFT_ARROW" else -1.0

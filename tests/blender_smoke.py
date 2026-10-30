@@ -1,3 +1,4 @@
+import math
 import sys
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from phantom_storyboard.operators import (
     ROOT,
     SCREEN,
     _camera_floor_position,
+    _movement_delta,
 )
 
 
@@ -85,6 +87,17 @@ def main():
     assert not any((bounds.use_min_x, bounds.use_max_x, bounds.use_min_y, bounds.use_max_y))
     assert cage.hide_render is True
     assert cube.parent == root
+    root.rotation_euler.z = math.radians(45.0)
+    bpy.context.view_layer.update()
+    forward = _movement_delta(root, "W", 1.0)
+    right = _movement_delta(root, "D", 1.0)
+    assert abs(forward.x + math.sqrt(0.5)) < 0.00001
+    assert abs(forward.y - math.sqrt(0.5)) < 0.00001
+    assert abs(right.x - math.sqrt(0.5)) < 0.00001
+    assert abs(right.y - math.sqrt(0.5)) < 0.00001
+    assert _movement_delta(root, "E", 1.0) == Vector((0.0, 0.0, 1.0))
+    root.rotation_euler.z = 0.0
+    bpy.context.view_layer.update()
     floor = float(root["phantom_floor_z"])
     assert round(root.location.z, 6) == round(floor, 6)
     assert round(cage.location.z - cage.dimensions.z / 2.0, 6) == round(floor, 6)

@@ -30,6 +30,8 @@ class PhantomSettings(bpy.types.PropertyGroup):
     is_box_visible: BoolProperty(
         name="Show cage", default=True, update=_update_box_visibility
     )
+    show_cage_size: BoolProperty(name="Cage Size", default=False)
+    show_cage_position: BoolProperty(name="Cage Floor Position", default=False)
     box_size: FloatVectorProperty(
         name="Cage size",
         subtype="XYZ",
