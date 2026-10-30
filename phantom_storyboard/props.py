@@ -40,7 +40,6 @@ class PhantomSettings(bpy.types.PropertyGroup):
         min=0.1,
     )
     move_step: FloatProperty(name="Move step", default=0.1, min=0.001, soft_max=2.0)
-    auto_key: BoolProperty(name="Insert keys while moving", default=True)
     outline_thickness: FloatProperty(
         name="Outline", default=1.5, min=0.1, soft_max=10.0
     )

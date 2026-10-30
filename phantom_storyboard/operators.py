@@ -351,6 +351,47 @@ def _movement_delta(root, key, step):
     return world_direction.normalized() * step
 
 
+def _insert_transform_key(root):
+    root.keyframe_insert(data_path="location")
+    root.keyframe_insert(data_path="rotation_euler")
+
+
+def _apply_held_input(root, held_keys, step):
+    horizontal = Vector((0.0, 0.0, 0.0))
+    vertical = Vector((0.0, 0.0, 0.0))
+    for key in held_keys & {"W", "S", "A", "D"}:
+        horizontal += _movement_delta(root, key, step)
+    if horizontal.length > step:
+        horizontal.normalize()
+        horizontal *= step
+    for key in held_keys & {"Q", "E"}:
+        vertical += _movement_delta(root, key, step)
+
+    changed = horizontal.length_squared > 0.0 or vertical.length_squared > 0.0
+    if changed:
+        root.location = _clamp_to_box(root, root.location + horizontal + vertical)
+    if "LEFT_ARROW" in held_keys:
+        root.rotation_euler.z += math.radians(5.0)
+        changed = True
+    if "RIGHT_ARROW" in held_keys:
+        root.rotation_euler.z -= math.radians(5.0)
+        changed = True
+    return changed
+
+
+def _record_next_frame(root, scene, held_keys, step):
+    if scene.frame_current >= scene.frame_end:
+        return False
+    location = root.location.copy()
+    rotation = root.rotation_euler.copy()
+    scene.frame_set(scene.frame_current + 1)
+    root.location = location
+    root.rotation_euler = rotation
+    _apply_held_input(root, held_keys, step)
+    _insert_transform_key(root)
+    return True
+
+
 def _screen_material(name, strength):
     material = bpy.data.materials.new(name)
     material.use_nodes = True
@@ -394,6 +435,52 @@ def _bake_material(image):
     material.node_tree.links.new(mixer.outputs[0], output.inputs["Surface"])
     _set_transparency(material)
     return material, texture
+
+
+def _force_freestyle_outline(view_layer):
+    freestyle_settings = view_layer.freestyle_settings
+    old_mode = freestyle_settings.mode
+    freestyle_settings.mode = "EDITOR"
+    line_sets = freestyle_settings.linesets
+    existing_states = [(line_set, line_set.show_render) for line_set in line_sets]
+    for line_set, _show_render in existing_states:
+        line_set.show_render = False
+
+    line_set = line_sets.new("PhantomBakeOutline")
+    line_style = line_set.linestyle
+    line_set.show_render = True
+    line_set.select_by_visibility = True
+    line_set.visibility = "VISIBLE"
+    line_set.select_by_edge_types = True
+    line_set.select_by_collection = False
+    line_set.select_by_image_border = False
+    line_set.select_by_face_marks = False
+    line_set.select_silhouette = True
+    line_set.select_contour = True
+    line_set.select_external_contour = True
+    line_set.select_border = True
+    line_set.select_crease = True
+    line_style.color = (0.0, 0.0, 0.0)
+    line_style.alpha = 1.0
+    line_style.thickness = 1.0
+    return freestyle_settings, old_mode, line_sets, line_set, line_style, existing_states
+
+
+def _restore_freestyle_outline(state):
+    (
+        freestyle_settings,
+        old_mode,
+        line_sets,
+        temporary_line_set,
+        temporary_line_style,
+        existing_states,
+    ) = state
+    line_sets.remove(temporary_line_set)
+    if temporary_line_style.users == 0:
+        bpy.data.linestyles.remove(temporary_line_style)
+    for line_set, show_render in existing_states:
+        line_set.show_render = show_render
+    freestyle_settings.mode = old_mode
 
 
 def _projection_plane(scene, root, image, duration):
@@ -648,6 +735,7 @@ class PHANTOM_OT_control(bpy.types.Operator):
     bl_idname = "phantom.control"
     bl_label = "Control Phantom"
     bl_description = "WASD: local movement, Q/E: world height, arrows: rotate, K: keyframe, Esc: stop"
+    bl_options = {"REGISTER", "UNDO"}
 
     _root_name = ""
 
@@ -689,20 +777,109 @@ class PHANTOM_OT_control(bpy.types.Operator):
             root.rotation_euler.z += direction * math.radians(5.0)
             changed = True
         elif event.type == "K":
-            root.keyframe_insert(data_path="location")
-            root.keyframe_insert(data_path="rotation_euler")
+            _insert_transform_key(root)
             self.report({"INFO"}, f"Keyframe inserted at {context.scene.frame_current}")
             return {"RUNNING_MODAL"}
         else:
             return {"PASS_THROUGH"}
 
-        if changed and settings.auto_key:
-            root.keyframe_insert(data_path="location")
-            root.keyframe_insert(data_path="rotation_euler")
         return {"RUNNING_MODAL"}
 
     def cancel(self, context):
         context.workspace.status_text_set(None)
+
+
+class PHANTOM_OT_insert_keyframe(bpy.types.Operator):
+    bl_idname = "phantom.insert_keyframe"
+    bl_label = "Insert Keyframe"
+    bl_description = "Insert Phantom location and rotation keys at the current frame"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        return _phantom_root(context.active_object) is not None
+
+    def execute(self, context):
+        root = _phantom_root(context.active_object)
+        _insert_transform_key(root)
+        self.report({"INFO"}, f"Phantom key inserted at frame {context.scene.frame_current}")
+        return {"FINISHED"}
+
+
+class PHANTOM_OT_record_realtime(bpy.types.Operator):
+    bl_idname = "phantom.record_realtime"
+    bl_label = "Record Movement in Real Time"
+    bl_description = "Advance the timeline at scene FPS and record Phantom controls on every frame"
+    bl_options = {"REGISTER", "UNDO"}
+
+    _timer = None
+    _root_name = ""
+    _start_frame = 0
+    _held_keys = None
+
+    @classmethod
+    def poll(cls, context):
+        return _phantom_root(context.active_object) is not None
+
+    def invoke(self, context, _event):
+        root = _phantom_root(context.active_object)
+        _ensure_bounds(root, context.scene.phantom_settings.box_size)
+        if context.screen is not None and context.screen.is_animation_playing:
+            bpy.ops.screen.animation_cancel(restore_frame=False)
+        self._root_name = root.name
+        self._start_frame = context.scene.frame_current
+        self._held_keys = set()
+        root["phantom_record_start_frame"] = self._start_frame
+        _insert_transform_key(root)
+
+        fps = context.scene.render.fps / context.scene.render.fps_base
+        self._timer = context.window_manager.event_timer_add(
+            1.0 / fps, window=context.window
+        )
+        context.window_manager.modal_handler_add(self)
+        context.workspace.status_text_set(
+            f"Recording from frame {self._start_frame}: hold WASD/QE/arrows, Esc or Enter stops"
+        )
+        return {"RUNNING_MODAL"}
+
+    def _finish(self, context):
+        if self._timer is not None:
+            context.window_manager.event_timer_remove(self._timer)
+            self._timer = None
+        context.workspace.status_text_set(None)
+        frames = context.scene.frame_current - self._start_frame + 1
+        root = bpy.data.objects.get(self._root_name)
+        if root is not None:
+            root["phantom_record_end_frame"] = context.scene.frame_current
+        self.report({"INFO"}, f"Recorded {frames} frame(s)")
+        return {"FINISHED"}
+
+    def modal(self, context, event):
+        root = bpy.data.objects.get(self._root_name)
+        if root is None:
+            return self._finish(context)
+        if event.type in {"ESC", "RET", "NUMPAD_ENTER", "RIGHTMOUSE"} and event.value == "PRESS":
+            return self._finish(context)
+
+        control_keys = {"W", "S", "A", "D", "Q", "E", "LEFT_ARROW", "RIGHT_ARROW"}
+        if event.type in control_keys:
+            if event.value == "PRESS":
+                self._held_keys.add(event.type)
+            elif event.value == "RELEASE":
+                self._held_keys.discard(event.type)
+            return {"RUNNING_MODAL"}
+
+        if event.type == "TIMER" and event.timer == self._timer:
+            scene = context.scene
+            if not _record_next_frame(
+                root, scene, self._held_keys, scene.phantom_settings.move_step
+            ):
+                return self._finish(context)
+            return {"RUNNING_MODAL"}
+        return {"PASS_THROUGH"}
+
+    def cancel(self, context):
+        self._finish(context)
 
 
 class PHANTOM_OT_set_depth(bpy.types.Operator):
@@ -873,6 +1050,7 @@ class PHANTOM_OT_bake(bpy.types.Operator):
             getattr(render, "line_thickness", None),
             scene.frame_current,
         )
+        freestyle_state = _force_freestyle_outline(context.view_layer)
         sample_count = math.ceil(duration / step)
         context.window_manager.progress_begin(0, sample_count)
         error = None
@@ -917,6 +1095,7 @@ class PHANTOM_OT_bake(bpy.types.Operator):
                 render.use_freestyle = old_render[4]
             if old_render[5] is not None:
                 render.line_thickness = old_render[5]
+            _restore_freestyle_outline(freestyle_state)
             scene.frame_set(old_render[6])
             context.window_manager.progress_end()
 
@@ -1010,6 +1189,8 @@ classes = (
     PHANTOM_OT_update_box,
     PHANTOM_OT_toggle_box,
     PHANTOM_OT_control,
+    PHANTOM_OT_insert_keyframe,
+    PHANTOM_OT_record_realtime,
     PHANTOM_OT_set_depth,
     PHANTOM_OT_create_screen,
     PHANTOM_OT_load_media,

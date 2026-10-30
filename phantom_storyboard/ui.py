@@ -54,15 +54,20 @@ class PHANTOM_PT_storyboard(bpy.types.Panel):
         controls.label(text=root.name if root else "No Phantom selected", icon="EMPTY_AXIS")
         controls.label(text="Arrow Empty = controller; do not delete", icon="INFO")
         controls.prop(settings, "move_step")
-        controls.prop(settings, "auto_key")
-        controls.operator("phantom.control", icon="PLAY")
+        controls.operator("phantom.control", text="Control Phantom", icon="PLAY")
         controls.label(text="WASD local / Q E vertical / arrows rotate")
+
+        recording = layout.box()
+        recording.label(text="Movement Recording", icon="REC")
+        recording.operator("phantom.insert_keyframe", text="Insert Keyframe (K)", icon="KEY_HLT")
+        recording.operator("phantom.record_realtime", icon="REC")
+        recording.label(text="Real-time: hold controls, Esc/Enter stops")
 
         bake = layout.box()
         bake.label(text="2D Projection", icon="RENDER_ANIMATION")
         bake.prop(settings, "bake_step")
         bake.prop(settings, "outline_thickness")
-        bake.operator("phantom.bake", icon="RENDER_STILL")
+        bake.operator("phantom.bake", text="Bake Keyed Motion to 2D", icon="RENDER_STILL")
         row = bake.row(align=True)
         use_2d = row.operator("phantom.use_bake", text="Use 2D")
         use_2d.use_bake = True

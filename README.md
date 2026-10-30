@@ -11,7 +11,7 @@ A small Blender 5.2+ add-on for staging 3D characters as bounded **Phantoms** an
 - Create a curved, UV-mapped backdrop and load an image, GIF, or Blender-supported video.
 - Illuminate the scene with an Area Light attached to the backdrop. The backdrop material itself is emissive, so Cycles can also use it as an emitting surface.
 - Lock selected objects to background (`Z=10`), Phantom (`Z=0`), or foreground (`Z=-10`) depth.
-- Bake the active Phantom through the scene camera to transparent PNGs with Freestyle outlines. Timing can be on ones, twos, threes, or fours.
+- Record movement either with individual transform keys (`K`) or in real time at the scene FPS, including paused frames, then bake it through the scene camera to transparent PNGs with light-independent Freestyle outlines.
 - Place the baked sequence on one camera-facing plane and switch render output between the editable 3D source and baked 2D result.
 
 ## Install
@@ -27,9 +27,11 @@ Enable **Phantom Storyboard**. Its panel appears in **3D Viewport â†’ Sidebar â†
    - If the Phantom already exists, select it and click **Load 3D Model** to import FBX, OBJ, glTF/GLB, STL, or PLY directly from disk. Loaded models are centered on the cage floor position in X/Y and placed on the floor in Z.
       - For a model already in the scene, select it and click **Attach Selected to Phantom**. With several Phantoms, Shift-select the target Phantom last so it is active.
 3. New cages align to the active camera's lower frame edge. Expand the collapsible **Cage Size** and **Cage Floor Position** sections as needed, then click **Apply Size / Position**. The floor blocks downward movement; the side walls are visual guides and do not block movement.
-4. Use `W/A/S/D` for local forward/back/left/right, `Q/E` for world Z, arrows for Z rotation, and `Esc` to leave control mode.
+4. Choose one recording method:
+   - **Insert Keyframe (K)** records location and rotation at the current frame. Advance the timeline manually between poses.
+   - **Record Movement in Real Time** remembers the current frame, advances at scene FPS, records every frame, and includes pauses. Hold `W/A/S/D`, `Q/E`, or arrows while it runs; press `Esc` or `Enter` to stop.
 5. Set the scene camera and frame range.
-6. Pick **On ones** (24 poses at 24 fps) or **On twos** (12 poses at 24 fps), then click **Bake to 2D Projection**.
+6. Pick **On ones** for every recorded frame or **On twos** for held two-frame poses, then click **Bake Keyed Motion to 2D**.
 7. Use **Use 2D** / **Use 3D** to choose what final renders see.
 
 For a backdrop, select the target Phantom, set **Distance behind**, and create the screen. It is tied to `Phantom_Cage`, placed behind the cage's farthest camera-facing depth, and follows cage size/position changes after **Apply Size / Position**. Keep the new screen selected and click **Load Image / Video**.

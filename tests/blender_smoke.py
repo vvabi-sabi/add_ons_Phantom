@@ -1,3 +1,4 @@
+import hashlib
 import math
 import sys
 from pathlib import Path
@@ -19,6 +20,7 @@ from phantom_storyboard.operators import (
     SCREEN,
     _camera_floor_position,
     _movement_delta,
+    _record_next_frame,
 )
 
 
@@ -42,8 +44,8 @@ def main():
     scene.render.resolution_y = 32
     scene.render.resolution_percentage = 100
     scene.frame_start = 1
-    scene.frame_end = 2
-    scene.phantom_settings.bake_step = "2"
+    scene.frame_end = 3
+    scene.phantom_settings.bake_step = "1"
 
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.object.delete(use_global=False)
@@ -196,6 +198,17 @@ def main():
     assert abs(loaded_center_y - 2.0) < 0.00001
     assert stroke.parent is None
 
+    active(root)
+    scene.frame_set(1)
+    assert bpy.ops.phantom.insert_keyframe() == {"FINISHED"}
+    recorded_start = root.location.copy()
+    assert _record_next_frame(root, scene, set(), scene.phantom_settings.move_step)
+    assert (root.location - recorded_start).length < 0.00001
+    assert _record_next_frame(root, scene, {"W"}, scene.phantom_settings.move_step)
+    assert (root.location - recorded_start).length > 0.05
+    assert not _record_next_frame(root, scene, {"W"}, scene.phantom_settings.move_step)
+    scene.frame_set(1)
+
     root.location.x += 50.0
     bpy.context.view_layer.update()
     active(root)
@@ -230,9 +243,29 @@ def main():
     bpy.context.view_layer.update()
 
     active(root)
+    freestyle_settings = bpy.context.view_layer.freestyle_settings
+    freestyle_settings.mode = "SCRIPT"
+    line_set = freestyle_settings.linesets[0]
+    line_set.show_render = False
+    line_set.select_silhouette = False
+    line_set.select_contour = False
+    line_set.linestyle.alpha = 0.0
+    empty_line_collection = bpy.data.collections.new("EmptyFreestyleFilter")
+    scene.collection.children.link(empty_line_collection)
+    line_set.select_by_collection = True
+    line_set.collection = empty_line_collection
+    line_style_count = len(bpy.data.linestyles)
     smoke_file = Path("/tmp/phantom_storyboard_smoke.blend")
     bpy.ops.wm.save_as_mainfile(filepath=str(smoke_file))
     assert bpy.ops.phantom.bake() == {"FINISHED"}
+    assert freestyle_settings.mode == "SCRIPT"
+    assert line_set.show_render is False
+    assert line_set.select_silhouette is False
+    assert line_set.select_contour is False
+    assert line_set.select_by_collection is True
+    assert line_set.collection == empty_line_collection
+    assert line_set.linestyle.alpha == 0.0
+    assert len(bpy.data.linestyles) == line_style_count
     projection = one_object(BAKE)
     assert projection.hide_render is False
     assert cube.hide_render is True
@@ -245,8 +278,23 @@ def main():
     assert projection.hide_render is False
 
     output_dir = Path(bpy.path.abspath(f"//phantom_bakes/Phantom_{root['phantom_id'][:8]}"))
-    assert (output_dir / "phantom_000001.png").is_file()
-    assert (output_dir / "phantom_000002.png").is_file()
+    frame_1 = output_dir / "phantom_000001.png"
+    frame_2 = output_dir / "phantom_000002.png"
+    frame_3 = output_dir / "phantom_000003.png"
+    assert frame_1.is_file() and frame_2.is_file() and frame_3.is_file()
+    assert hashlib.sha256(frame_1.read_bytes()).digest() != hashlib.sha256(
+        frame_3.read_bytes()
+    ).digest()
+    outline_image = bpy.data.images.load(str(frame_1), check_existing=False)
+    pixels = outline_image.pixels[:]
+    assert any(
+        pixels[index + 3] > 0.2
+        and pixels[index] < 0.05
+        and pixels[index + 1] < 0.05
+        and pixels[index + 2] < 0.05
+        for index in range(0, len(pixels), 4)
+    )
+    bpy.data.images.remove(outline_image)
 
     legacy = bpy.data.objects.new("LegacyPhantom", None)
     scene.collection.objects.link(legacy)
